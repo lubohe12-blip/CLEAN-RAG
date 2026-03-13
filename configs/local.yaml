@@ -1,0 +1,45 @@
+project:
+  name: CLEAN
+  root: /Users/a203/CLEAN
+
+runtime:
+  device: mps
+  debug: true
+  seed: 42
+
+paths:
+  app_dir: app
+  workspace_dir: workspace
+
+  raw_dir: workspace/data/raw
+  sample_dir: workspace/data/sample
+  processed_dir: workspace/data/processed
+  embedding_dir: workspace/data/embeddings
+  retrieval_dir: workspace/data/retrieval
+
+  output_dir: workspace/outputs
+  log_dir: workspace/outputs/logs
+  ckpt_dir: workspace/outputs/checkpoints
+  pred_dir: workspace/outputs/predictions
+  fig_dir: workspace/outputs/figures
+  cache_dir: workspace/cache
+
+data:
+  train_file: workspace/data/sample/train_sample.csv
+  test_file: workspace/data/sample/test_sample.csv
+  fasta_file: workspace/data/sample/sample.fasta
+  embedding_file: workspace/data/embeddings/sample_embeddings.pt
+
+train:
+  batch_size: 4
+  num_workers: 0
+  epochs: 2
+  lr: 1e-4
+
+retrieval:
+  topk: 5
+  use_faiss: false
+
+experiment:
+  name: clean_local_debug
+  model_type: clean

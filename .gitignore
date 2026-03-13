@@ -1,15 +1,97 @@
-*/data/esm_data
-*/data/distance_map
-*/data/pretrained
-*/dist/
-*/esm/
-*/build/
-*/model/
-*/gmm_test/
-*/src/CLEAN/__pycache__/
-*/*.egg-info/*
-.DS_STORE
-*/results/*
-# Ignore large models that have been fetched manually
+# =========================
+# System / editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.ipynb_checkpoints/
+
+# =========================
+# Python cache / build
+# =========================
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# =========================
+# Original CLEAN project internals
+# =========================
+app/src/CLEAN/__pycache__/
+app/build/
+app/dist/
+app/esm/
+app/gmm_test/
+
+# Original data directories with large files
+app/data/esm_data/
+app/data/distance_map/
+app/data/pretrained/
+app/data/model/
+
+# Original results
+app/results/
+
+# =========================
+# New workspace directories
+# =========================
+workspace/cache/
+workspace/outputs/logs/
+workspace/outputs/checkpoints/
+workspace/outputs/predictions/
+workspace/outputs/figures/
+
+# Large data
+workspace/data/raw/
+workspace/data/processed/
+workspace/data/embeddings/
+workspace/data/retrieval/
+
+# Keep sample data for local debug if needed
+# If you do NOT want sample data in git, remove the next line
+!workspace/data/sample/
+
+# =========================
+# Model / tensor / index files
+# =========================
 *.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.npy
+*.npz
+*.pkl
+*.joblib
+*.faiss
+*.index
 *.fai
+
+# =========================
+# Logs / temp
+# =========================
+*.log
+*.out
+*.err
+tmp/
+temp/
+
+# =========================
+# Optional: keep directory structure
+# =========================
+!workspace/
+!workspace/data/
+!workspace/outputs/

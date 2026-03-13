@@ -1,0 +1,45 @@
+project:
+  name: CLEAN
+  root: /root/CLEAN
+
+runtime:
+  device: cuda
+  debug: false
+  seed: 42
+
+paths:
+  app_dir: app
+  workspace_dir: workspace
+
+  raw_dir: workspace/data/raw
+  sample_dir: workspace/data/sample
+  processed_dir: workspace/data/processed
+  embedding_dir: workspace/data/embeddings
+  retrieval_dir: workspace/data/retrieval
+
+  output_dir: workspace/outputs
+  log_dir: workspace/outputs/logs
+  ckpt_dir: workspace/outputs/checkpoints
+  pred_dir: workspace/outputs/predictions
+  fig_dir: workspace/outputs/figures
+  cache_dir: workspace/cache
+
+data:
+  train_file: workspace/data/processed/train_full.csv
+  test_file: workspace/data/processed/test_full.csv
+  fasta_file: workspace/data/raw/full.fasta
+  embedding_file: workspace/data/embeddings/full_embeddings.pt
+
+train:
+  batch_size: 32
+  num_workers: 4
+  epochs: 30
+  lr: 1e-4
+
+retrieval:
+  topk: 20
+  use_faiss: true
+
+experiment:
+  name: clean_server_full
+  model_type: clean
