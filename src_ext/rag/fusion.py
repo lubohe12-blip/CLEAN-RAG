@@ -69,12 +69,35 @@ def _build_clean_map(clean_items):
     return _normalize(raw)
 
 
+def _shared_ec_levels(left, right):
+    left_parts = [part.strip() for part in str(left).split(".") if part.strip()]
+    right_parts = [part.strip() for part in str(right).split(".") if part.strip()]
+
+    shared = 0
+    for left_part, right_part in zip(left_parts, right_parts):
+        if left_part != right_part:
+            break
+        shared += 1
+    return shared
+
+
+def _prototype_rank_map(prototype_candidates):
+    ranks = {}
+    for rank_idx, candidate in enumerate(prototype_candidates, start=1):
+        ec_number = candidate.get("ec_number")
+        if ec_number and ec_number not in ranks:
+            ranks[ec_number] = rank_idx
+    return ranks
+
+
 def fuse_predictions(
     clean_predictions,
     retrieval_predictions,
     clean_weight=0.85,
     retrieval_weight=0.15,
     rerank_topk=5,
+    rerank_max_prototype_rank=0,
+    rerank_require_prototype_not_worse_than_clean=False,
     margin_threshold=0.08,
     min_retrieval_score=0.45,
     min_retrieval_margin=0.05,
@@ -88,6 +111,9 @@ def fuse_predictions(
     retrieval_top1_max_clean_candidates=1,
     retrieval_top1_min_score=0.95,
     retrieval_top1_min_margin=0.50,
+    retrieval_top1_min_shared_levels=0,
+    retrieval_top1_min_clean_advantage=0.0,
+    retrieval_top1_max_prototype_rank=0,
     allow_new_ecs=True,
     max_new_ecs=2,
 ):
@@ -98,6 +124,7 @@ def fuse_predictions(
         clean_items = clean_predictions.get(query_id, [])
         retrieval_payload = retrieval_predictions.get(query_id, {})
         retrieval_items = retrieval_payload.get("ec_candidates", [])
+        prototype_rank_map = _prototype_rank_map(retrieval_payload.get("prototype_candidates", []))
 
         clean_scores = _build_clean_map(clean_items)
         retrieval_scores = _build_retrieval_map(retrieval_items)
@@ -119,6 +146,8 @@ def fuse_predictions(
         enable_retrieval = standard_gate or override_gate
 
         clean_rank_order = [item["ec_number"] for item in clean_items]
+        clean_top1_ec = clean_rank_order[0] if clean_rank_order else ""
+        clean_top1_prototype_rank = prototype_rank_map.get(clean_top1_ec, 0)
         rerank_pool = set(clean_rank_order[:rerank_topk]) if rerank_topk > 0 else set(clean_rank_order)
         if allow_new_ecs and enable_retrieval:
             retrieval_ranked_ecs = [item["ec_number"] for item in retrieval_items[:max_new_ecs]]
@@ -127,7 +156,19 @@ def fuse_predictions(
         ranking = []
         seen = set()
         for ec in clean_rank_order:
-            if ec in rerank_pool and enable_retrieval:
+            prototype_rank = prototype_rank_map.get(ec, 0)
+            prototype_ok = True
+            if ec != clean_top1_ec:
+                if rerank_max_prototype_rank > 0:
+                    prototype_ok = prototype_rank > 0 and prototype_rank <= rerank_max_prototype_rank
+                if (
+                    prototype_ok
+                    and rerank_require_prototype_not_worse_than_clean
+                    and clean_top1_prototype_rank > 0
+                ):
+                    prototype_ok = prototype_rank > 0 and prototype_rank <= clean_top1_prototype_rank
+
+            if ec in rerank_pool and enable_retrieval and prototype_ok:
                 final_score = clean_weight * clean_scores.get(ec, 0.0) + retrieval_weight * retrieval_scores.get(
                     ec, 0.0
                 )
@@ -140,7 +181,7 @@ def fuse_predictions(
                     "final_score": final_score,
                     "clean_score": clean_scores.get(ec, 0.0),
                     "retrieval_score": retrieval_scores.get(ec, 0.0),
-                    "used_retrieval": bool(enable_retrieval and ec in rerank_pool),
+                    "used_retrieval": bool(enable_retrieval and ec in rerank_pool and prototype_ok),
                     "clean_margin": margin,
                 }
             )
@@ -150,14 +191,28 @@ def fuse_predictions(
             for ec, retrieval_score in retrieval_scores.items():
                 if ec in seen:
                     continue
+                prototype_rank = prototype_rank_map.get(ec, 0)
+                prototype_ok = True
+                if rerank_max_prototype_rank > 0:
+                    prototype_ok = prototype_rank > 0 and prototype_rank <= rerank_max_prototype_rank
+                if (
+                    prototype_ok
+                    and rerank_require_prototype_not_worse_than_clean
+                    and clean_top1_prototype_rank > 0
+                ):
+                    prototype_ok = prototype_rank > 0 and prototype_rank <= clean_top1_prototype_rank
                 ranking.append(
                     {
                         "ec_number": ec,
-                        "final_score": clean_weight * clean_scores.get(ec, 0.0)
-                        + retrieval_weight * retrieval_score,
+                        "final_score": (
+                            clean_weight * clean_scores.get(ec, 0.0)
+                            + retrieval_weight * retrieval_score
+                            if prototype_ok
+                            else clean_scores.get(ec, 0.0)
+                        ),
                         "clean_score": clean_scores.get(ec, 0.0),
                         "retrieval_score": retrieval_score,
-                        "used_retrieval": True,
+                        "used_retrieval": bool(prototype_ok),
                         "clean_margin": margin,
                     }
                 )
@@ -169,7 +224,6 @@ def fuse_predictions(
         retrieval_top1_override_reason = ""
 
         if top2_override_enabled and len(ranking) >= 2 and len(clean_rank_order) >= 2:
-            clean_top1_ec = clean_rank_order[0]
             clean_top2_ec = clean_rank_order[1]
             ranking_map = {item["ec_number"]: item for item in ranking}
             top1_item = ranking_map.get(clean_top1_ec)
@@ -207,7 +261,14 @@ def fuse_predictions(
 
         if retrieval_top1_override_enabled and not override_applied:
             retrieval_top1_ec = retrieval_items[0]["ec_number"] if retrieval_items else ""
-            clean_top1_ec = clean_rank_order[0] if clean_rank_order else ""
+            shared_levels = _shared_ec_levels(clean_top1_ec, retrieval_top1_ec)
+            clean_top1_retrieval_score = retrieval_scores.get(clean_top1_ec, 0.0)
+            retrieval_clean_advantage = retrieval_scores.get(retrieval_top1_ec, 0.0) - clean_top1_retrieval_score
+            prototype_rank = 0
+            for rank_idx, candidate in enumerate(retrieval_payload.get("prototype_candidates", []), start=1):
+                if candidate.get("ec_number") == retrieval_top1_ec:
+                    prototype_rank = rank_idx
+                    break
             if (
                 retrieval_top1_ec
                 and clean_top1_ec
@@ -215,6 +276,12 @@ def fuse_predictions(
                 and len(clean_rank_order) <= retrieval_top1_max_clean_candidates
                 and retrieval_top1 >= retrieval_top1_min_score
                 and retrieval_margin >= retrieval_top1_min_margin
+                and shared_levels >= retrieval_top1_min_shared_levels
+                and retrieval_clean_advantage >= retrieval_top1_min_clean_advantage
+                and (
+                    retrieval_top1_max_prototype_rank <= 0
+                    or (prototype_rank > 0 and prototype_rank <= retrieval_top1_max_prototype_rank)
+                )
             ):
                 ranking_map = {item["ec_number"]: item for item in ranking}
                 top1_item = ranking_map.get(clean_top1_ec)
@@ -234,7 +301,9 @@ def fuse_predictions(
                     retrieval_top1_override_applied = True
                     retrieval_top1_override_reason = (
                         f"promote_retrieval_top1:{retrieval_top1_ec}|clean_candidates={len(clean_rank_order)}|"
-                        f"retrieval_score={retrieval_top1:.4f}|retrieval_margin={retrieval_margin:.4f}"
+                        f"retrieval_score={retrieval_top1:.4f}|retrieval_margin={retrieval_margin:.4f}|"
+                        f"shared_levels={shared_levels}|clean_advantage={retrieval_clean_advantage:.4f}|"
+                        f"prototype_rank={prototype_rank}"
                     )
                     ranking.sort(key=lambda item: item["final_score"], reverse=True)
 

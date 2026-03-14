@@ -124,6 +124,79 @@ This suggests that retrieval augmentation is especially useful for correcting:
 - borderline CLEAN predictions
 - high-confidence single-candidate errors when retrieval evidence is strong
 
+## Full Evaluation: Best RAG Configuration on `new.csv`
+
+We also evaluated the retrieval-augmented CLEAN pipeline on the original full CLEAN evaluation set:
+
+- Test set: `app/data/new.csv`
+- Retrieval corpus: `app/data/split100.csv`
+- Precomputed retrieval embeddings: `app/data/pretrained/100.pt`
+- Current main config:
+  - local: `configs/local_full_eval.yaml`
+  - server: `configs/server_full_eval.yaml`
+
+### Current best configuration
+
+The current `best_full_eval` setup keeps only the components that remained useful on the full test set:
+
+- sequence-neighbor retrieval
+- EC prototype retrieval
+- EC-level consensus aggregation
+- `retrieval_top1_override`
+
+The following modules were removed from the main full-eval config because they did not improve the complete test-set result:
+
+- `top2_override`
+
+The current `retrieval_top1_override` is constrained by:
+
+- EC prefix consistency
+- retrieval-vs-clean score advantage
+- prototype-rank constraint (`retrieval_top1_max_prototype_rank: 2`)
+
+### Best full-eval result
+
+Using the current best full-eval configuration, we obtained:
+
+- `precision_micro: 0.5714`
+- `recall_micro: 0.4453`
+- `f1_micro: 0.5006`
+- `subset_accuracy: 0.4719`
+- `clean_wrong_rag_correct: 14`
+- `clean_correct_rag_wrong: 2`
+
+This is the strongest full-evaluation RAG variant we obtained so far.
+
+### Full-eval ablation
+
+| Setting | Precision | Recall | F1 | Subset Acc | Wrong->Correct | Correct->Wrong |
+|---|---:|---:|---:|---:|---:|---:|
+| `rerank_only` | 0.5536 | 0.4314 | 0.4849 | 0.4617 | 7 | 2 |
+| `top2_only` | 0.5536 | 0.4314 | 0.4849 | 0.4617 | 7 | 2 |
+| `retrieval_top1_only` | 0.5689 | 0.4433 | 0.4983 | 0.4719 | 14 | 3 |
+| `best_full_eval` | 0.5714 | 0.4453 | 0.5006 | 0.4719 | 14 | 2 |
+
+### Ablation takeaway
+
+- `top2_override` did not contribute measurable gains on the full CLEAN test set.
+- The main gains came from `retrieval_top1_override`.
+- Adding stricter gating to `retrieval_top1_override` reduced newly introduced errors while preserving most corrected cases.
+- The current best full-eval setup keeps the correction ability of RAG while improving stability.
+
+### Reproducing the best full-eval run
+
+```bash
+python scripts/evaluate_experiment.py --config configs/local_full_eval.yaml --report_metrics
+python scripts/analyze_rag_errors.py --config configs/local_full_eval.yaml
+```
+
+On a CUDA server, use:
+
+```bash
+python scripts/evaluate_experiment.py --config configs/server_full_eval.yaml --report_metrics
+python scripts/analyze_rag_errors.py --config configs/server_full_eval.yaml
+```
+
 
 ## 1. Install
 

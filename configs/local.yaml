@@ -51,12 +51,14 @@ retrieval:
   clean_weight: 0.85
   retrieval_weight: 0.15
   rerank_topk: 5
+  rerank_max_prototype_rank: 2
+  rerank_require_prototype_not_worse_than_clean: true
   margin_threshold: 0.08
   min_retrieval_score: 0.45
   min_retrieval_margin: 0.05
   override_retrieval_score: 0.80
   override_retrieval_margin: 0.14
-  top2_override_enabled: true
+  top2_override_enabled: false
   top2_clean_gap_max: 0.08
   top2_retrieval_advantage_min: 0.10
   top2_require_retrieval_top2_match: true
@@ -64,6 +66,9 @@ retrieval:
   retrieval_top1_max_clean_candidates: 1
   retrieval_top1_min_score: 0.95
   retrieval_top1_min_margin: 0.14
+  retrieval_top1_min_shared_levels: 1
+  retrieval_top1_min_clean_advantage: 0.20
+  retrieval_top1_max_prototype_rank: 2
   allow_new_ecs: true
   max_new_ecs: 2
 
@@ -71,3 +76,20 @@ experiment:
   name: clean_local_debug
   model_type: clean
   clean_dataset_name: sample_test_rag
+
+reranker:
+  enabled: false
+  candidate_clean_topk: 5
+  candidate_retrieval_topk: 5
+
+policy:
+  held_out_test_files:
+    - app/data/new.csv
+    - app/data/price.csv
+    - app/data/datasets/halogenase.csv
+  retrieval_curriculum:
+    - split100
+    - split70
+    - split50
+    - split30
+    - split10

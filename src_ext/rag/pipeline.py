@@ -11,6 +11,11 @@ from src_ext.evaluation.report import (
     save_prediction_report,
 )
 from src_ext.rag.fusion import fuse_predictions, parse_clean_prediction_file
+from src_ext.rag.reranker import (
+    CandidateReranker,
+    apply_reranker_to_fused_predictions,
+    build_candidate_feature_table,
+)
 from src_ext.retrieval.candidate_builder import build_ec_catalog, build_train_candidates, load_sequence_table
 from src_ext.retrieval.retriever import SequenceRetriever
 from src_ext.utils.device import get_device
@@ -83,6 +88,7 @@ def _build_prediction_dataframe(test_df, fused_predictions, retrieval_prediction
                 "retrieval_top1_override_reason": fused_payload.get(
                     "retrieval_top1_override_reason", ""
                 ),
+                "reranker_applied": bool(fused_payload.get("reranker_applied", False)),
             }
         )
 
@@ -107,10 +113,22 @@ def _build_prediction_dataframe(test_df, fused_predictions, retrieval_prediction
                 "retrieval_top1_override_reason": fused_payload.get(
                     "retrieval_top1_override_reason", ""
                 ),
+                "reranker_applied": bool(fused_payload.get("reranker_applied", False)),
             }
         )
 
     return pd.DataFrame(rows), neighbor_rows
+
+
+def _resolve_reranker_path(cfg):
+    reranker_cfg = cfg.get("reranker", {})
+    custom_path = reranker_cfg.get("model_path")
+    if custom_path:
+        model_path = Path(custom_path)
+        if not model_path.is_absolute():
+            model_path = cfg["project"]["root"] / model_path
+        return model_path.resolve()
+    return (cfg["paths"]["ckpt_dir"] / f"{cfg['experiment']['name']}_reranker.pkl").resolve()
 
 
 def run_clean_rag_pipeline(cfg, report_metrics=False, force_clean=False):
@@ -168,6 +186,10 @@ def run_clean_rag_pipeline(cfg, report_metrics=False, force_clean=False):
         clean_weight=cfg["retrieval"].get("clean_weight", 0.85),
         retrieval_weight=cfg["retrieval"].get("retrieval_weight", 0.15),
         rerank_topk=cfg["retrieval"].get("rerank_topk", 5),
+        rerank_max_prototype_rank=cfg["retrieval"].get("rerank_max_prototype_rank", 0),
+        rerank_require_prototype_not_worse_than_clean=cfg["retrieval"].get(
+            "rerank_require_prototype_not_worse_than_clean", False
+        ),
         margin_threshold=cfg["retrieval"].get("margin_threshold", 0.08),
         min_retrieval_score=cfg["retrieval"].get("min_retrieval_score", 0.45),
         min_retrieval_margin=cfg["retrieval"].get("min_retrieval_margin", 0.05),
@@ -181,9 +203,34 @@ def run_clean_rag_pipeline(cfg, report_metrics=False, force_clean=False):
         retrieval_top1_max_clean_candidates=cfg["retrieval"].get("retrieval_top1_max_clean_candidates", 1),
         retrieval_top1_min_score=cfg["retrieval"].get("retrieval_top1_min_score", 0.95),
         retrieval_top1_min_margin=cfg["retrieval"].get("retrieval_top1_min_margin", 0.50),
+        retrieval_top1_min_shared_levels=cfg["retrieval"].get("retrieval_top1_min_shared_levels", 0),
+        retrieval_top1_min_clean_advantage=cfg["retrieval"].get("retrieval_top1_min_clean_advantage", 0.0),
+        retrieval_top1_max_prototype_rank=cfg["retrieval"].get("retrieval_top1_max_prototype_rank", 0),
         allow_new_ecs=cfg["retrieval"].get("allow_new_ecs", True),
         max_new_ecs=cfg["retrieval"].get("max_new_ecs", 2),
     )
+
+    candidate_feature_df = build_candidate_feature_table(
+        test_df,
+        clean_predictions,
+        retrieval_predictions,
+        fused_predictions,
+        clean_topk=cfg.get("reranker", {}).get("candidate_clean_topk", 5),
+        retrieval_topk=cfg.get("reranker", {}).get("candidate_retrieval_topk", 5),
+        include_labels=True,
+    )
+
+    reranker_path = _resolve_reranker_path(cfg)
+    reranker_applied = False
+    if cfg.get("reranker", {}).get("enabled", False) and reranker_path.exists():
+        reranker = CandidateReranker.load(reranker_path)
+        fused_predictions, scored_feature_df = apply_reranker_to_fused_predictions(
+            fused_predictions,
+            candidate_feature_df,
+            reranker,
+        )
+        candidate_feature_df = scored_feature_df
+        reranker_applied = True
 
     prediction_df, neighbor_rows = _build_prediction_dataframe(
         test_df, fused_predictions, retrieval_predictions
@@ -194,10 +241,12 @@ def run_clean_rag_pipeline(cfg, report_metrics=False, force_clean=False):
     neighbors_path = cfg["paths"]["pred_dir"] / f"{cfg['experiment']['name']}_rag_neighbors.json"
     metrics_path = cfg["paths"]["pred_dir"] / f"{cfg['experiment']['name']}_rag_metrics.json"
     catalog_path = cfg["paths"]["pred_dir"] / f"{cfg['experiment']['name']}_ec_catalog.csv"
+    features_path = cfg["paths"]["pred_dir"] / f"{cfg['experiment']['name']}_reranker_features.csv"
 
     save_prediction_report(prediction_df, pred_path)
     save_neighbors_report(neighbor_rows, neighbors_path)
     save_prediction_report(ec_catalog, catalog_path)
+    save_prediction_report(candidate_feature_df, features_path)
 
     metrics = None
     if report_metrics:
@@ -216,4 +265,6 @@ def run_clean_rag_pipeline(cfg, report_metrics=False, force_clean=False):
         "metrics": metrics,
         "clean_predictions": clean_pred_path,
         "retriever_cache": cache_path,
+        "reranker_features": features_path,
+        "reranker_model": reranker_path if reranker_applied else None,
     }
