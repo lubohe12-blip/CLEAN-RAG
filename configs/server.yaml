@@ -1,6 +1,6 @@
 project:
-  name: CLEAN
-  root: /root/CLEAN
+  name: CLEAN-RAG
+  root: /root/CLEAN-RAG
 
 runtime:
   device: cuda

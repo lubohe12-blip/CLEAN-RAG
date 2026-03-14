@@ -1,10 +1,10 @@
 project:
   name: CLEAN-RAG
-  root: /Users/a203/CLEAN-RAG
+  root: /root/CLEAN-RAG
 
 runtime:
-  device: mps
-  debug: true
+  device: cuda
+  debug: false
   seed: 42
 
 paths:
@@ -26,14 +26,14 @@ paths:
 
 data:
   train_file: workspace/data/sample/train_sample.csv
-  test_file: workspace/data/sample/test_sample.csv
-  fasta_file: workspace/data/sample/sample.fasta
-  embedding_file: workspace/data/embeddings/sample_embeddings.pt
+  test_file: app/data/new.csv
+  fasta_file: app/data/new.fasta
+  embedding_file: workspace/data/embeddings/full_eval_embeddings.pt
 
 train:
-  batch_size: 4
-  num_workers: 0
-  epochs: 2
+  batch_size: 32
+  num_workers: 4
+  epochs: 30
   lr: 1e-4
 
 retrieval:
@@ -68,6 +68,6 @@ retrieval:
   max_new_ecs: 2
 
 experiment:
-  name: clean_local_debug
+  name: clean_server_full_eval
   model_type: clean
-  clean_dataset_name: sample_test_rag
+  clean_dataset_name: new_rag
