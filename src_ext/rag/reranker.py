@@ -233,20 +233,56 @@ def build_candidate_feature_table(
 
 
 class CandidateReranker:
-    VERSION = 2
+    VERSION = 3
 
-    def __init__(self):
+    def __init__(self, training_mode="pairwise", max_negatives_per_positive=5):
         self.model = LogisticRegression(max_iter=1000, class_weight="balanced")
         self.version = self.VERSION
         self.feature_columns = list(FEATURE_COLUMNS)
+        self.training_mode = str(training_mode)
+        self.max_negatives_per_positive = int(max_negatives_per_positive)
+
+    def _build_pairwise_training_frame(self, feature_df):
+        pair_rows = []
+
+        for _, group in feature_df.groupby("query_id", sort=False):
+            positives = group[group["label"].astype(int) == 1]
+            negatives = group[group["label"].astype(int) == 0]
+            if positives.empty or negatives.empty:
+                continue
+
+            sampled_negatives = negatives.head(self.max_negatives_per_positive)
+            for _, pos_row in positives.iterrows():
+                pos_features = pos_row[self.feature_columns].astype(float)
+                for _, neg_row in sampled_negatives.iterrows():
+                    neg_features = neg_row[self.feature_columns].astype(float)
+
+                    pos_minus_neg = (pos_features - neg_features).to_dict()
+                    pos_minus_neg["label"] = 1
+                    pair_rows.append(pos_minus_neg)
+
+                    neg_minus_pos = (neg_features - pos_features).to_dict()
+                    neg_minus_pos["label"] = 0
+                    pair_rows.append(neg_minus_pos)
+
+        if not pair_rows:
+            return pd.DataFrame(columns=self.feature_columns + ["label"])
+        return pd.DataFrame(pair_rows, columns=self.feature_columns + ["label"])
 
     def fit(self, feature_df):
         if feature_df.empty:
             raise ValueError("empty feature dataframe")
-        y = feature_df["label"].astype(int)
+
+        train_df = feature_df
+        if self.training_mode == "pairwise":
+            train_df = self._build_pairwise_training_frame(feature_df)
+            if train_df.empty:
+                raise ValueError("pairwise reranker training produced no valid pairs")
+
+        y = train_df["label"].astype(int)
         if y.nunique() < 2:
             raise ValueError("reranker training requires at least two label classes")
-        x = feature_df[self.feature_columns]
+        x = train_df[self.feature_columns]
         self.model.fit(x, y)
         return self
 
@@ -254,7 +290,10 @@ class CandidateReranker:
         if feature_df.empty:
             return pd.Series(dtype=float)
         x = feature_df[self.feature_columns]
-        scores = self.model.predict_proba(x)[:, 1]
+        if self.training_mode == "pairwise":
+            scores = self.model.decision_function(x)
+        else:
+            scores = self.model.predict_proba(x)[:, 1]
         return pd.Series(scores, index=feature_df.index, dtype=float)
 
     def save(self, path):

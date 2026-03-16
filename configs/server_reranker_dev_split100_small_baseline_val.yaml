@@ -79,6 +79,8 @@ experiment:
 
 reranker:
   enabled: true
+  training_mode: pairwise
+  max_negatives_per_positive: 5
   candidate_clean_topk: 5
   candidate_retrieval_topk: 5
   model_path: workspace/outputs/checkpoints/clean_server_reranker_dev_split100_small_baseline.pkl

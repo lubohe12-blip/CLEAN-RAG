@@ -71,7 +71,11 @@ def main():
     )
 
     feature_df = pd.read_csv(outputs["reranker_features"])
-    reranker = CandidateReranker().fit(feature_df)
+    reranker_cfg = cfg.get("reranker", {})
+    reranker = CandidateReranker(
+        training_mode=reranker_cfg.get("training_mode", "pairwise"),
+        max_negatives_per_positive=reranker_cfg.get("max_negatives_per_positive", 5),
+    ).fit(feature_df)
     model_path = _resolve_reranker_path(cfg)
     reranker.save(model_path)
 
