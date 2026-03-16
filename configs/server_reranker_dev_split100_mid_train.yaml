@@ -1,0 +1,96 @@
+project:
+  name: CLEAN-RAG
+  root: /root/CLEAN-RAG
+
+runtime:
+  device: cuda
+  debug: false
+  seed: 42
+
+paths:
+  app_dir: app
+  workspace_dir: workspace
+
+  raw_dir: workspace/data/raw
+  sample_dir: workspace/data/sample
+  processed_dir: workspace/data/processed
+  embedding_dir: workspace/data/embeddings
+  retrieval_dir: workspace/data/retrieval
+
+  output_dir: workspace/outputs
+  log_dir: workspace/outputs/logs
+  ckpt_dir: workspace/outputs/checkpoints
+  pred_dir: workspace/outputs/predictions
+  fig_dir: workspace/outputs/figures
+  cache_dir: workspace/cache
+
+data:
+  train_file: workspace/data/processed/split100_reranker_mid_train.csv
+  test_file: workspace/data/processed/split100_reranker_mid_train.csv
+  fasta_file: workspace/data/processed/split100_reranker_mid_train.fasta
+  embedding_file: workspace/data/embeddings/split100_reranker_mid_train_embeddings.pt
+
+train:
+  batch_size: 8
+  num_workers: 0
+  epochs: 10
+  lr: 1e-4
+
+retrieval:
+  topk: 5
+  use_faiss: false
+  clean_train_data: split100
+  use_clean_precomputed_corpus: true
+  train_file: app/data/split100.csv
+  embedding_file: app/data/pretrained/100.pt
+  prototype_topk: 5
+  neighbor_max_weight: 0.40
+  neighbor_sum_weight: 0.30
+  neighbor_count_weight: 0.10
+  prototype_weight: 0.20
+  clean_weight: 0.85
+  retrieval_weight: 0.15
+  rerank_topk: 5
+  rerank_max_prototype_rank: 2
+  rerank_require_prototype_not_worse_than_clean: true
+  margin_threshold: 0.08
+  min_retrieval_score: 0.45
+  min_retrieval_margin: 0.05
+  override_retrieval_score: 0.80
+  override_retrieval_margin: 0.14
+  top2_override_enabled: false
+  top2_clean_gap_max: 0.08
+  top2_retrieval_advantage_min: 0.10
+  top2_require_retrieval_top2_match: true
+  retrieval_top1_override_enabled: true
+  retrieval_top1_max_clean_candidates: 1
+  retrieval_top1_min_score: 0.95
+  retrieval_top1_min_margin: 0.14
+  retrieval_top1_min_shared_levels: 1
+  retrieval_top1_min_clean_advantage: 0.20
+  retrieval_top1_max_prototype_rank: 2
+  allow_new_ecs: true
+  max_new_ecs: 2
+
+experiment:
+  name: clean_server_reranker_dev_split100_mid_train
+  model_type: clean
+  clean_dataset_name: split100_reranker_mid_train
+
+reranker:
+  enabled: false
+  candidate_clean_topk: 5
+  candidate_retrieval_topk: 5
+  model_path: workspace/outputs/checkpoints/clean_server_reranker_dev_split100_mid.pkl
+
+policy:
+  held_out_test_files:
+    - app/data/new.csv
+    - app/data/price.csv
+    - app/data/datasets/halogenase.csv
+  retrieval_curriculum:
+    - split100
+    - split70
+    - split50
+    - split30
+    - split10

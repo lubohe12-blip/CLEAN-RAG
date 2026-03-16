@@ -4,6 +4,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -68,7 +70,9 @@ def main():
 
     app_data_dir.mkdir(parents=True, exist_ok=True)
     workspace_pred_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(test_csv, app_csv_path)
+    # Normalize to CLEAN's expected tab-delimited format before inference.
+    normalized_df = pd.read_csv(test_csv, sep=None, engine="python")
+    normalized_df.to_csv(app_csv_path, index=False, sep="\t")
 
     original_cwd = Path.cwd()
     try:

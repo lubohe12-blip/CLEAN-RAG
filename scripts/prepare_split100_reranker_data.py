@@ -40,8 +40,8 @@ def main():
 
     train_out.parent.mkdir(parents=True, exist_ok=True)
     val_out.parent.mkdir(parents=True, exist_ok=True)
-    train_df.to_csv(train_out, index=False)
-    val_df.to_csv(val_out, index=False)
+    train_df.to_csv(train_out, index=False, sep="\t")
+    val_df.to_csv(val_out, index=False, sep="\t")
 
     print("Prepared split100 reranker development data.")
     print(f"input: {input_path}")
