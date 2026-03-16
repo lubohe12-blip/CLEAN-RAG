@@ -99,3 +99,7 @@ temp/
 !workspace/
 !workspace/data/
 !workspace/outputs/
+workspace/
+app/data/*.csv
+app/data/*.fasta
+app/data/pretrained/*.pt
