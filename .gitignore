@@ -40,6 +40,10 @@ app/data/esm_data/
 app/data/distance_map/
 app/data/pretrained/
 app/data/model/
+app/data/*_train_retrieval.fasta
+app/data/*_test_retrieval.fasta
+app/data/*_retrieval.fasta
+app/data/*_reranker_*.fasta
 
 # Original results
 app/results/
