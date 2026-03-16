@@ -197,6 +197,13 @@ python scripts/evaluate_experiment.py --config configs/server_full_eval.yaml --r
 python scripts/analyze_rag_errors.py --config configs/server_full_eval.yaml
 ```
 
+## Development Notes
+
+Current reranker development and roadmap are tracked in:
+
+- `app/artifacts/reranker_dev_log_and_roadmap.md`
+- `app/artifacts/small_reranker_baseline.md`
+
 
 ## 1. Install
 
