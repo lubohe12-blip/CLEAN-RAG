@@ -28,6 +28,14 @@ FEATURE_COLUMNS = [
     "is_retrieval_top1",
     "shared_levels_to_clean_top1",
     "retrieval_advantage_over_clean_top1",
+    "clean_score_gap_to_clean_top1",
+    "retrieval_score_gap_to_clean_top1",
+    "base_final_score_gap_to_clean_top1",
+    "prototype_score_gap_to_clean_top1",
+    "prototype_rank_inv_gap_to_clean_top1",
+    "neighbor_max_gap_to_clean_top1",
+    "neighbor_sum_gap_to_clean_top1",
+    "neighbor_count_gap_to_clean_top1",
 ]
 
 
@@ -119,14 +127,17 @@ def build_candidate_feature_table(
         fused_payload = fused_predictions.get(query_id, {})
 
         clean_rank_map, clean_score_map = _clean_maps(clean_items)
-        retrieval_rank_map, retrieval_score_map, retrieval_detail_map = _candidate_maps(retrieval_items)
+        retrieval_rank_map, retrieval_score_map, retrieval_detail_map = _candidate_maps(
+            retrieval_items
+        )
         prototype_rank_map, prototype_score_map = _prototype_maps(
             retrieval_payload.get("prototype_candidates", [])
         )
-        base_rank_map, base_score_map, base_detail_map = _base_ranking_map(fused_payload)
+        _, base_score_map, base_detail_map = _base_ranking_map(fused_payload)
 
         clean_ranked = [item["ec_number"] for item in clean_items[:clean_topk]]
         retrieval_ranked = [item["ec_number"] for item in retrieval_items[:retrieval_topk]]
+
         candidate_ecs = []
         seen = set()
         for ec in clean_ranked + retrieval_ranked:
@@ -136,24 +147,47 @@ def build_candidate_feature_table(
 
         clean_top1_ec = clean_ranked[0] if clean_ranked else ""
         retrieval_top1_ec = retrieval_ranked[0] if retrieval_ranked else ""
-        clean_top1_retrieval_score = retrieval_score_map.get(clean_top1_ec, 0.0)
+        clean_top1_clean_score = float(clean_score_map.get(clean_top1_ec, 0.0))
+        clean_top1_retrieval_score = float(retrieval_score_map.get(clean_top1_ec, 0.0))
+        clean_top1_base_score = float(base_score_map.get(clean_top1_ec, 0.0))
+        clean_top1_prototype_score = float(prototype_score_map.get(clean_top1_ec, 0.0))
+        clean_top1_prototype_rank_inv = _rank_inverse(prototype_rank_map.get(clean_top1_ec, 999))
+        clean_top1_retrieval_detail = retrieval_detail_map.get(clean_top1_ec, {})
+        clean_top1_neighbor_max = float(
+            clean_top1_retrieval_detail.get("neighbor_max_score", 0.0)
+        )
+        clean_top1_neighbor_sum = float(
+            clean_top1_retrieval_detail.get("neighbor_sum_score", 0.0)
+        )
+        clean_top1_neighbor_count = float(
+            clean_top1_retrieval_detail.get("neighbor_count", 0.0)
+        )
 
         for ec in candidate_ecs:
             retrieval_detail = retrieval_detail_map.get(ec, {})
             base_detail = base_detail_map.get(ec, {})
+            clean_score = float(clean_score_map.get(ec, 0.0))
+            retrieval_score = float(retrieval_score_map.get(ec, 0.0))
+            base_final_score = float(base_score_map.get(ec, 0.0))
+            prototype_rank_inv = _rank_inverse(prototype_rank_map.get(ec, 999))
+            prototype_score = float(prototype_score_map.get(ec, 0.0))
+            neighbor_max_score = float(retrieval_detail.get("neighbor_max_score", 0.0))
+            neighbor_sum_score = float(retrieval_detail.get("neighbor_sum_score", 0.0))
+            neighbor_count = float(retrieval_detail.get("neighbor_count", 0.0))
+
             feature_row = {
                 "query_id": query_id,
                 "ec_number": ec,
-                "clean_score": float(clean_score_map.get(ec, 0.0)),
-                "retrieval_score": float(retrieval_score_map.get(ec, 0.0)),
-                "base_final_score": float(base_score_map.get(ec, 0.0)),
+                "clean_score": clean_score,
+                "retrieval_score": retrieval_score,
+                "base_final_score": base_final_score,
                 "clean_rank_inv": _rank_inverse(clean_rank_map.get(ec, 999)),
                 "retrieval_rank_inv": _rank_inverse(retrieval_rank_map.get(ec, 999)),
-                "prototype_rank_inv": _rank_inverse(prototype_rank_map.get(ec, 999)),
-                "prototype_score": float(prototype_score_map.get(ec, 0.0)),
-                "neighbor_max_score": float(retrieval_detail.get("neighbor_max_score", 0.0)),
-                "neighbor_sum_score": float(retrieval_detail.get("neighbor_sum_score", 0.0)),
-                "neighbor_count": float(retrieval_detail.get("neighbor_count", 0.0)),
+                "prototype_rank_inv": prototype_rank_inv,
+                "prototype_score": prototype_score,
+                "neighbor_max_score": neighbor_max_score,
+                "neighbor_sum_score": neighbor_sum_score,
+                "neighbor_count": neighbor_count,
                 "clean_margin": float(fused_payload.get("clean_margin", 0.0)),
                 "retrieval_top1": float(fused_payload.get("retrieval_top1", 0.0)),
                 "retrieval_margin": float(fused_payload.get("retrieval_margin", 0.0)),
@@ -163,7 +197,29 @@ def build_candidate_feature_table(
                 "is_retrieval_top1": float(ec == retrieval_top1_ec),
                 "shared_levels_to_clean_top1": float(_shared_ec_levels(ec, clean_top1_ec)),
                 "retrieval_advantage_over_clean_top1": float(
-                    retrieval_score_map.get(ec, 0.0) - clean_top1_retrieval_score
+                    retrieval_score - clean_top1_retrieval_score
+                ),
+                "clean_score_gap_to_clean_top1": float(clean_score - clean_top1_clean_score),
+                "retrieval_score_gap_to_clean_top1": float(
+                    retrieval_score - clean_top1_retrieval_score
+                ),
+                "base_final_score_gap_to_clean_top1": float(
+                    base_final_score - clean_top1_base_score
+                ),
+                "prototype_score_gap_to_clean_top1": float(
+                    prototype_score - clean_top1_prototype_score
+                ),
+                "prototype_rank_inv_gap_to_clean_top1": float(
+                    prototype_rank_inv - clean_top1_prototype_rank_inv
+                ),
+                "neighbor_max_gap_to_clean_top1": float(
+                    neighbor_max_score - clean_top1_neighbor_max
+                ),
+                "neighbor_sum_gap_to_clean_top1": float(
+                    neighbor_sum_score - clean_top1_neighbor_sum
+                ),
+                "neighbor_count_gap_to_clean_top1": float(
+                    neighbor_count - clean_top1_neighbor_count
                 ),
                 "base_used_retrieval": float(base_detail.get("used_retrieval", False)),
                 "label": int(ec in true_ecs) if include_labels else 0,
@@ -177,7 +233,7 @@ def build_candidate_feature_table(
 
 
 class CandidateReranker:
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self):
         self.model = LogisticRegression(max_iter=1000, class_weight="balanced")

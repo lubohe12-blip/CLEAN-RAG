@@ -224,13 +224,14 @@ def run_clean_rag_pipeline(cfg, report_metrics=False, force_clean=False):
     reranker_applied = False
     if cfg.get("reranker", {}).get("enabled", False) and reranker_path.exists():
         reranker = CandidateReranker.load(reranker_path)
-        fused_predictions, scored_feature_df = apply_reranker_to_fused_predictions(
-            fused_predictions,
-            candidate_feature_df,
-            reranker,
-        )
-        candidate_feature_df = scored_feature_df
-        reranker_applied = True
+        if getattr(reranker, "version", None) == CandidateReranker.VERSION:
+            fused_predictions, scored_feature_df = apply_reranker_to_fused_predictions(
+                fused_predictions,
+                candidate_feature_df,
+                reranker,
+            )
+            candidate_feature_df = scored_feature_df
+            reranker_applied = True
 
     prediction_df, neighbor_rows = _build_prediction_dataframe(
         test_df, fused_predictions, retrieval_predictions
