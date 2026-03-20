@@ -19,6 +19,8 @@ This file freezes the current no-leakage development baseline for the split100 s
 
 - Model path:
   `workspace/outputs/checkpoints/clean_server_reranker_dev_split100_small_baseline.pkl`
+- Training mode:
+  `pairwise`
 
 ## Feature Set
 
@@ -58,23 +60,28 @@ Current reranker uses:
 
 Validation result on `split100_reranker_small_val.csv`:
 
-- `precision_micro: 0.9978`
-- `recall_micro: 0.9388407978923599`
-- `f1_micro: 0.9674229203025015`
-- `subset_accuracy: 0.9446`
+- `precision_micro: 0.9988`
+- `recall_micro: 0.9397817086940158`
+- `f1_micro: 0.9683924762458794`
+- `subset_accuracy: 0.9456`
 - `num_samples: 5000`
-- `num_labels: 1266`
+- `num_labels: 1262`
 
 Error analysis summary:
 
-- `same: 4895`
-- `clean_wrong_rag_correct: 105`
+- `same: 4890`
+- `clean_wrong_rag_correct: 110`
 - `clean_correct_rag_wrong: 0`
 
 ## Interpretation
 
 This is the current best no-leakage development baseline.
 
-- It improves over the previous small reranker version by removing the last `clean_correct_rag_wrong` case.
-- The gain came from adding candidate-vs-clean-top1 relative features, which reduced false overrides while preserving corrective behavior.
+- It improves over the previous pointwise small reranker baseline.
+- Compared with the previous pointwise baseline:
+  - `f1_micro: 0.9674 -> 0.9684`
+  - `subset_accuracy: 0.9446 -> 0.9456`
+  - `clean_wrong_rag_correct: 105 -> 110`
+  - `clean_correct_rag_wrong: 0 -> 0`
+- The gain comes from using a pairwise ranking objective on top of the current relative-feature set.
 - Keep `new.csv`, `price.csv`, and `halogenase.csv` frozen. Do not use this baseline for held-out final test reporting.

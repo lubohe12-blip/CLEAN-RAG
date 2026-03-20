@@ -29,7 +29,7 @@ def mine_hard_negative(dist_map, knn=10):
     return negative
 
 
-def mine_negative(anchor, id_ec, ec_id, mine_neg):
+def mine_negative(anchor, id_ec, ec_id, mine_neg, return_ec=False):
     anchor_ec = id_ec[anchor]
     pos_ec = random.choice(anchor_ec)
     neg_ec = mine_neg[pos_ec]['negative']
@@ -38,16 +38,23 @@ def mine_negative(anchor, id_ec, ec_id, mine_neg):
     while result_ec in anchor_ec:
         result_ec = random.choices(neg_ec, weights=weights, k=1)[0]
     neg_id = random.choice(ec_id[result_ec])
+    if return_ec:
+        return neg_id, result_ec
     return neg_id
 
 
-def random_positive(id, id_ec, ec_id):
+def random_positive(id, id_ec, ec_id, return_ec=False):
     pos_ec = random.choice(id_ec[id])
     pos = id
     if len(ec_id[pos_ec]) == 1:
-        return pos + '_' + str(random.randint(0, 9))
+        pos = pos + '_' + str(random.randint(0, 9))
+        if return_ec:
+            return pos, pos_ec
+        return pos
     while pos == id:
         pos = random.choice(ec_id[pos_ec])
+    if return_ec:
+        return pos, pos_ec
     return pos
 
 
@@ -78,16 +85,20 @@ class Triplet_dataset_with_mine_EC(torch.utils.data.Dataset):
 
 class MultiPosNeg_dataset_with_mine_EC(torch.utils.data.Dataset):
 
-    def __init__(self, id_ec, ec_id, mine_neg, n_pos, n_neg):
+    def __init__(self, id_ec, ec_id, mine_neg, n_pos, n_neg, return_labels=False):
         self.id_ec = id_ec
         self.ec_id = ec_id
         self.n_pos = n_pos
         self.n_neg = n_neg
+        self.return_labels = return_labels
         self.full_list = []
         self.mine_neg = mine_neg
         for ec in ec_id.keys():
             if '-' not in ec:
                 self.full_list.append(ec)
+        self.ec_to_index = {
+            ec: index for index, ec in enumerate(self.full_list)
+        }
 
     def __len__(self):
         return len(self.full_list)
@@ -98,14 +109,23 @@ class MultiPosNeg_dataset_with_mine_EC(torch.utils.data.Dataset):
         a = format_esm(torch.load('./data/esm_data/' +
                        anchor + '.pt')).unsqueeze(0)
         data = [a]
+        # Keep labels aligned with the sampled SupCon-H tuple semantics:
+        # anchor and positives use the current anchor EC, negatives use mined ECs.
+        labels = [self.ec_to_index[anchor_ec]]
         for _ in range(self.n_pos):
             pos = random_positive(anchor, self.id_ec, self.ec_id)
             p = format_esm(torch.load('./data/esm_data/' +
                            pos + '.pt')).unsqueeze(0)
             data.append(p)
+            labels.append(self.ec_to_index[anchor_ec])
         for _ in range(self.n_neg):
-            neg = mine_negative(anchor, self.id_ec, self.ec_id, self.mine_neg)
+            neg, neg_ec = mine_negative(
+                anchor, self.id_ec, self.ec_id, self.mine_neg, return_ec=True)
             n = format_esm(torch.load('./data/esm_data/' +
                            neg + '.pt')).unsqueeze(0)
             data.append(n)
-        return torch.cat(data)
+            labels.append(self.ec_to_index[neg_ec])
+        batch_data = torch.cat(data)
+        if self.return_labels:
+            return batch_data, torch.tensor(labels, dtype=torch.long)
+        return batch_data

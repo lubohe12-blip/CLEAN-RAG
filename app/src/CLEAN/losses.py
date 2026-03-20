@@ -34,3 +34,110 @@ def SupConHardLoss(model_emb, temp, n_pos):
     log_prob = (pos_logits_sum - exp_logits_sum)/n_pos
     loss = - log_prob.mean()
     return loss    
+
+
+def _compute_batch_centers(embeddings, labels):
+    labels = labels.to(device=embeddings.device, dtype=torch.long).view(-1)
+    unique_labels, inverse_indices, counts = torch.unique(
+        labels, sorted=True, return_inverse=True, return_counts=True)
+    center_sums = torch.zeros(
+        unique_labels.size(0),
+        embeddings.size(1),
+        device=embeddings.device,
+        dtype=embeddings.dtype,
+    )
+    center_sums.index_add_(0, inverse_indices, embeddings)
+    centers = center_sums / counts.unsqueeze(1).to(dtype=embeddings.dtype)
+    return unique_labels, inverse_indices, counts, centers
+
+
+def compute_gaussian_well_loss(embeddings, labels, sigma):
+    if sigma <= 0:
+        raise ValueError("sigma must be > 0 for Gaussian well regularization.")
+
+    if embeddings.ndim != 2:
+        raise ValueError("embeddings must have shape [B, D].")
+
+    labels = labels.to(device=embeddings.device, dtype=torch.long).view(-1)
+    if labels.numel() != embeddings.size(0):
+        raise ValueError("labels must have the same batch size as embeddings.")
+
+    _, inverse_indices, counts, centers = _compute_batch_centers(embeddings, labels)
+    valid_sample_mask = counts[inverse_indices] >= 2
+    valid_sample_count = int(valid_sample_mask.sum().item())
+    valid_class_count = int((counts >= 2).sum().item())
+
+    if valid_sample_count == 0:
+        zero = embeddings.new_zeros(())
+        return zero, {
+            "valid_sample_count": 0,
+            "valid_class_count": valid_class_count,
+        }
+
+    valid_embeddings = embeddings[valid_sample_mask]
+    valid_centers = centers[inverse_indices[valid_sample_mask]]
+    squared_distances = (valid_embeddings - valid_centers).pow(2).sum(dim=1)
+    sigma_sq = embeddings.new_tensor(float(sigma) ** 2)
+    loss = 1.0 - torch.exp(-squared_distances / sigma_sq)
+    return loss.mean(), {
+        "valid_sample_count": valid_sample_count,
+        "valid_class_count": valid_class_count,
+    }
+
+
+def compute_embedding_compactness_stats(embeddings, labels):
+    if embeddings.ndim != 2:
+        raise ValueError("embeddings must have shape [B, D].")
+
+    labels = labels.to(device=embeddings.device, dtype=torch.long).view(-1)
+    if labels.numel() != embeddings.size(0):
+        raise ValueError("labels must have the same batch size as embeddings.")
+
+    unique_labels, inverse_indices, counts, centers = _compute_batch_centers(
+        embeddings, labels)
+    valid_sample_mask = counts[inverse_indices] >= 2
+    valid_class_mask = counts >= 2
+
+    stats = {
+        "intra_center_dist_sum": 0.0,
+        "intra_center_dist_count": 0,
+        "intra_pairwise_dist_sum": 0.0,
+        "intra_pairwise_dist_count": 0,
+        "nearest_negative_center_dist_sum": 0.0,
+        "nearest_negative_center_dist_count": 0,
+        "valid_sample_count": int(valid_sample_mask.sum().item()),
+        "valid_class_count": int(valid_class_mask.sum().item()),
+    }
+
+    if stats["valid_sample_count"] > 0:
+        valid_embeddings = embeddings[valid_sample_mask]
+        valid_centers = centers[inverse_indices[valid_sample_mask]]
+        intra_center_dist = (valid_embeddings - valid_centers).norm(dim=1, p=2)
+        stats["intra_center_dist_sum"] = float(intra_center_dist.sum().item())
+        stats["intra_center_dist_count"] = int(intra_center_dist.numel())
+
+    if unique_labels.numel() > 1:
+        center_distances = torch.cdist(embeddings, centers, p=2)
+        center_distances.scatter_(
+            1,
+            inverse_indices.unsqueeze(1),
+            float("inf"),
+        )
+        nearest_negative_center_dist = center_distances.min(dim=1).values
+        finite_mask = torch.isfinite(nearest_negative_center_dist)
+        if finite_mask.any():
+            valid_nearest = nearest_negative_center_dist[finite_mask]
+            stats["nearest_negative_center_dist_sum"] = float(valid_nearest.sum().item())
+            stats["nearest_negative_center_dist_count"] = int(valid_nearest.numel())
+
+    for class_index, count in enumerate(counts.tolist()):
+        if count < 2:
+            continue
+        class_embeddings = embeddings[inverse_indices == class_index]
+        pairwise_distances = torch.pdist(class_embeddings, p=2)
+        if pairwise_distances.numel() == 0:
+            continue
+        stats["intra_pairwise_dist_sum"] += float(pairwise_distances.sum().item())
+        stats["intra_pairwise_dist_count"] += int(pairwise_distances.numel())
+
+    return stats

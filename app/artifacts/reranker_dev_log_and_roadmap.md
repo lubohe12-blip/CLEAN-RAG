@@ -90,9 +90,11 @@ Two development scales were defined:
 
 ### 4.2 Current model form
 
-Current reranker is a pointwise `LogisticRegression` classifier over candidate EC rows.
+Current reranker is a pairwise `LogisticRegression` reranker over candidate EC rows.
 
-It reranks candidate ECs produced by the base CLEAN+RAG pipeline.
+Training now uses query-local positive-vs-negative candidate differences.
+
+This replaced the earlier pointwise candidate classifier because the task is a ranking problem rather than an independent per-candidate classification problem.
 
 ### 4.3 Feature evolution
 
@@ -128,7 +130,17 @@ The current version added candidate-vs-clean-top1 relative features:
 - `neighbor_sum_gap_to_clean_top1`
 - `neighbor_count_gap_to_clean_top1`
 
-This change removed the remaining false positive on small validation.
+This change removed the remaining false positive on small validation for the pointwise reranker and became the feature base for the pairwise reranker.
+
+#### Current objective
+
+The current small baseline no longer uses pointwise training.
+
+It uses a minimal pairwise objective:
+
+- within each `query_id`, build positive-vs-negative feature differences
+- train `LogisticRegression` on those pairwise difference rows
+- use the learned decision function as the reranking score
 
 ## 5. Small Dev Baseline
 
@@ -142,22 +154,23 @@ This change removed the remaining false positive on small validation.
 ### 5.2 Model artifact
 
 - `workspace/outputs/checkpoints/clean_server_reranker_dev_split100_small_baseline.pkl`
+- training mode: `pairwise`
 
 ### 5.3 Validation result
 
 Validation on `split100_reranker_small_val.csv`:
 
-- `precision_micro: 0.9978`
-- `recall_micro: 0.9388407978923599`
-- `f1_micro: 0.9674229203025015`
-- `subset_accuracy: 0.9446`
+- `precision_micro: 0.9988`
+- `recall_micro: 0.9397817086940158`
+- `f1_micro: 0.9683924762458794`
+- `subset_accuracy: 0.9456`
 - `num_samples: 5000`
-- `num_labels: 1266`
+- `num_labels: 1262`
 
 Error analysis:
 
-- `same: 4895`
-- `clean_wrong_rag_correct: 105`
+- `same: 4890`
+- `clean_wrong_rag_correct: 110`
 - `clean_correct_rag_wrong: 0`
 
 ### 5.4 Interpretation
@@ -167,8 +180,9 @@ This is the current best no-leakage reranker development baseline.
 Important meaning:
 
 - the learned reranker now produces net correction gain on validation
-- the previous lone bad override case is gone
-- the relative features improved discrimination rather than simply making the model more aggressive
+- the previous lone bad override case remains removed
+- moving from pointwise to pairwise training adds another `5` corrected cases without introducing new errors
+- the relative features plus pairwise objective now define the active small development baseline
 
 ## 6. Representative Error Pattern
 
@@ -211,7 +225,7 @@ This suggests the reranker is learning more than one narrow rule:
 
 ## 7. Open Risks
 
-- the current reranker is still pointwise, not pairwise or listwise
+- the current reranker is pairwise, but still not listwise or fully query-grouped in the optimization sense
 - validation scale is still only `20k/5k`
 - the `50k/10k` mid-scale development split currently exceeds the available server memory budget
 - held-out final evaluation has not yet been rerun with a finalized reranker, which is correct at this stage
@@ -230,8 +244,11 @@ Immediate next work should stay on the `20k/5k` split:
 
 Most promising next direction:
 
-1. move from pointwise classification toward query-aware reranking
-2. start with a minimal pairwise objective or grouped candidate ranking approach
+1. keep pairwise training as the current default
+2. next consider a stronger query-aware reranker:
+   - better negative sampling
+   - grouped ranking losses
+   - listwise objectives
 3. preserve the current feature set as the starting feature backbone
 
 ### Phase C: scale cautiously
