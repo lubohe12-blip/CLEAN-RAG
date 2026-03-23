@@ -235,11 +235,15 @@ def main():
               f'avg_nearest_negative_center_dist '
               f'{epoch_stats["avg_nearest_negative_center_dist"]:6.4f}')
         print('-' * 75)
-    # remove tmp save weights
-    os.remove('./data/model/' + model_name + '.pth')
-    os.remove('./data/model/' + model_name + '_' + str(epoch) + '.pth')
+    # remove tmp save weights when they were actually created
+    best_model_path = './data/model/' + model_name + '.pth'
+    periodic_ckpt_path = './data/model/' + model_name + '_' + str(epoch) + '.pth'
+    if os.path.exists(best_model_path):
+        os.remove(best_model_path)
+    if os.path.exists(periodic_ckpt_path):
+        os.remove(periodic_ckpt_path)
     # save final weights
-    torch.save(model.state_dict(), './data/model/' + model_name + '.pth')
+    torch.save(model.state_dict(), best_model_path)
 
 
 if __name__ == '__main__':

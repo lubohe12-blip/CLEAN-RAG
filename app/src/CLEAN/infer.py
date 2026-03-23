@@ -12,6 +12,16 @@ def warn(*args, **kwargs):
     pass
 warnings.warn = warn
 
+
+def load_train_embeddings(train_data, ec_id_dict_train, model, device, dtype, pretrained):
+    if pretrained and train_data == "split70":
+        return torch.load('./data/pretrained/70.pt', map_location=device)
+    if pretrained and train_data == "split100":
+        return torch.load('./data/pretrained/100.pt', map_location=device)
+    # Custom checkpoints may use a different output dimension than the
+    # bundled pretrained center cache, so recompute train embeddings.
+    return model(esm_embedding(ec_id_dict_train, device, dtype))
+
 def infer_pvalue(train_data, test_data, p_value = 1e-5, nk_random = 20, 
                  report_metrics = False, pretrained=True, model_name=None):
     use_cuda = torch.cuda.is_available()
@@ -23,7 +33,7 @@ def infer_pvalue(train_data, test_data, p_value = 1e-5, nk_random = 20,
     # NOTE: change this to LayerNormNet(512, 256, device, dtype) 
     # and rebuild with [python build.py install]
     # if inferencing on model trained with supconH loss
-    model = LayerNormNet(512, 128, device, dtype)
+    model = LayerNormNet(512, 256, device, dtype)
     
     if pretrained:
         try:
@@ -38,13 +48,8 @@ def infer_pvalue(train_data, test_data, p_value = 1e-5, nk_random = 20,
         
     model.load_state_dict(checkpoint)
     model.eval()
-    # load precomputed EC cluster center embeddings if possible
-    if train_data == "split70":
-        emb_train = torch.load('./data/pretrained/70.pt', map_location=device)
-    elif train_data == "split100":
-        emb_train = torch.load('./data/pretrained/100.pt', map_location=device)
-    else:
-        emb_train = model(esm_embedding(ec_id_dict_train, device, dtype))
+    emb_train = load_train_embeddings(
+        train_data, ec_id_dict_train, model, device, dtype, pretrained)
         
     emb_test = model_embedding_test(id_ec_test, model, device, dtype)
     eval_dist = get_dist_map_test(emb_train, emb_test, ec_id_dict_train, id_ec_test, device, dtype)
@@ -88,7 +93,7 @@ def infer_maxsep(train_data, test_data, report_metrics=False,
     id_ec_train, ec_id_dict_train = get_ec_id_dict('./data/' + train_data + '.csv')
     id_ec_test, _ = get_ec_id_dict('./data/' + test_data + '.csv')
 
-    model = LayerNormNet(512, 128, device, dtype)
+    model = LayerNormNet(512, 256, device, dtype)
 
     if pretrained:
         try:
@@ -104,12 +109,8 @@ def infer_maxsep(train_data, test_data, report_metrics=False,
     model.load_state_dict(checkpoint)
     model.eval()
 
-    if train_data == "split70":
-        emb_train = torch.load('./data/pretrained/70.pt', map_location=device)
-    elif train_data == "split100":
-        emb_train = torch.load('./data/pretrained/100.pt', map_location=device)
-    else:
-        emb_train = model(esm_embedding(ec_id_dict_train, device, dtype))
+    emb_train = load_train_embeddings(
+        train_data, ec_id_dict_train, model, device, dtype, pretrained)
 
     emb_test = model_embedding_test(id_ec_test, model, device, dtype)
     eval_dist = get_dist_map_test(emb_train, emb_test, ec_id_dict_train, id_ec_test, device, dtype)
